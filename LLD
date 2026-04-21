@@ -1,0 +1,244 @@
+   LOW LEVEL DESIGN (LLD)
+   Expense Tracker Project
+  ==========================
+
+  --------- ENTITY LAYER ---------
+class User {
+    public Long id;
+    public String username;
+    public String email;
+    public String password;
+}
+
+class Transaction {
+    public Long id;
+    public String type; // INCOME or EXPENSE
+    public double amount;
+    public String purpose;
+    public String filePath;
+    public java.time.LocalDate date;
+}
+
+ --------- DTO LAYER ---------
+class SignupRequest {
+    public String username;
+    public String email;
+    public String password;
+}
+
+class TransactionRequest {
+    public String type;
+    public double amount;
+    public String purpose;
+    public java.time.LocalDate date;
+}
+
+class TransactionResponse {
+    public Long id;
+    public String type;
+    public double amount;
+    public String purpose;
+    public String filePath;
+    public String date;
+}
+
+ --------- REPOSITORY LAYER ---------
+interface UserRepository {
+    User save(User u);
+}
+
+class InMemoryUserRepository implements UserRepository {
+    private java.util.List<User> users = new java.util.ArrayList<>();
+    private Long idCounter = 1L;
+
+    public User save(User u) {
+        u.id = idCounter++;
+        users.add(u);
+        return u;
+    }
+}
+
+interface TransactionRepository {
+    Transaction save(Transaction t);
+    java.util.List<Transaction> findAll();
+}
+
+class InMemoryTransactionRepository implements TransactionRepository {
+    private java.util.List<Transaction> db = new java.util.ArrayList<>();
+    private Long idCounter = 1L;
+
+    public Transaction save(Transaction t) {
+        t.id = idCounter++;
+        db.add(t);
+        return t;
+    }
+
+    public java.util.List<Transaction> findAll() {
+        return db;
+    }
+}
+
+--------- SERVICE LAYER ---------
+class UserService {
+    private UserRepository repo;
+
+    public UserService(UserRepository repo) {
+        this.repo = repo;
+    }
+
+    public User signup(SignupRequest req) {
+        User u = new User();
+        u.username = req.username;
+        u.email = req.email;
+        u.password = req.password; // (in real app -> encrypt it)
+        return repo.save(u);
+    }
+}
+
+class TransactionService {
+
+    private TransactionRepository repo;
+
+    public TransactionService(TransactionRepository repo) {
+        this.repo = repo;
+    }
+
+    public TransactionResponse addTransaction(TransactionRequest req, String filePath) {
+        Transaction t = new Transaction();
+        t.type = req.type;
+        t.amount = req.amount;
+        t.purpose = req.purpose;
+        t.filePath = filePath;
+        t.date = req.date;
+
+        Transaction saved = repo.save(t);
+        return mapToResponse(saved);
+    }
+
+    public java.util.List<TransactionResponse> getAllTransactions() {
+        java.util.List<Transaction> list = repo.findAll();
+        java.util.List<TransactionResponse> res = new java.util.ArrayList<>();
+        for (Transaction t : list) {
+            res.add(mapToResponse(t));
+        }
+        return res;
+    }
+
+    private TransactionResponse mapToResponse(Transaction t) {
+        TransactionResponse r = new TransactionResponse();
+        r.id = t.id;
+        r.type = t.type;
+        r.amount = t.amount;
+        r.purpose = t.purpose;
+        r.filePath = t.filePath;
+        r.date = t.date.toString();
+        return r;
+    }
+
+     Pie Chart Data
+    public java.util.Map<String, Double> getExpenseSummary() {
+        java.util.List<Transaction> list = repo.findAll();
+        java.util.Map<String, Double> map = new java.util.HashMap<>();
+
+        for (Transaction t : list) {
+            if (t.type.equals("EXPENSE")) {
+                map.put(t.purpose,
+                        map.getOrDefault(t.purpose, 0.0) + t.amount);
+            }
+        }
+        return map;
+    }
+}
+
+ --------- FILE SERVICE ---------
+class FileService {
+    public String saveFile(String fileName) {
+        return "uploads/" + fileName;
+    }
+}
+
+ --------- EXCEL SERVICE ---------
+class ExcelService {
+    public void generateExcel(java.util.List<TransactionResponse> list) {
+        System.out.println("Generating Excel...");
+        for (TransactionResponse t : list) {
+            System.out.println(t.id + "," + t.type + "," + t.amount + "," + t.purpose);
+        }
+    }
+}
+
+ --------- CONTROLLER ---------
+class Controller {
+
+    private UserService userService;
+    private TransactionService transactionService;
+    private FileService fileService;
+    private ExcelService excelService;
+
+    public Controller() {
+        userService = new UserService(new InMemoryUserRepository());
+        transactionService = new TransactionService(new InMemoryTransactionRepository());
+        fileService = new FileService();
+        excelService = new ExcelService();
+    }
+
+    // Signup API
+    public User signup(SignupRequest req) {
+        return userService.signup(req);
+    }
+
+    // Add Transaction API
+    public TransactionResponse addTransaction(TransactionRequest req, String fileName) {
+        String path = fileService.saveFile(fileName);
+        return transactionService.addTransaction(req, path);
+    }
+
+    public java.util.List<TransactionResponse> getAll() {
+        return transactionService.getAllTransactions();
+    }
+
+    public java.util.Map<String, Double> getSummary() {
+        return transactionService.getExpenseSummary();
+    }
+
+    public void exportExcel() {
+        excelService.generateExcel(transactionService.getAllTransactions());
+    }
+}
+
+ --------- MAIN ---------
+public class MainApp {
+    public static void main(String[] args) {
+        Controller controller = new Controller();
+
+        // Signup
+        SignupRequest signup = new SignupRequest();
+        signup.username = "Shubham";
+        signup.email = "shubham@gmail.com";
+        signup.password = "1234";
+        controller.signup(signup);
+
+        // Add Expense
+        TransactionRequest t1 = new TransactionRequest();
+        t1.type = "EXPENSE";
+        t1.amount = 500;
+        t1.purpose = "Food";
+        t1.date = java.time.LocalDate.now();
+
+        controller.addTransaction(t1, "bill.png");
+
+        // Add Income
+        TransactionRequest t2 = new TransactionRequest();
+        t2.type = "INCOME";
+        t2.amount = 2000;
+        t2.purpose = "Salary";
+        t2.date = java.time.LocalDate.now();
+
+        controller.addTransaction(t2, "");
+
+        System.out.println(controller.getAll());
+        System.out.println(controller.getSummary());
+
+        controller.exportExcel();
+    }
+}
